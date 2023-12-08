@@ -1,0 +1,15 @@
+binaries:
+  - name: crane
+    uses: "@prelude/github"
+    with:
+      repository: google/go-containerregistry
+      release: v0.16.1
+      download: go-containerregistry_{{ sys.os | titlecase }}_{{ sys.arch }}.tar.gz
+
+pipelines:
+  - name: index.docker_io_auth
+    match: "index.docker.io"
+    expr: 
+      from: ./docker_io.star
+      
+    
