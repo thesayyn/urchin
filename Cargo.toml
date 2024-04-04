@@ -10,8 +10,9 @@ allocative = "0.3.0"
 anyhow = "1.0.75"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
-starlark = "0.9.0"
-starlark_derive = "0.9.0"
+starlark = "0.10.0"
+starlark_derive = "0.10.0"
+derive_more = "0.99.17"
 
 [profile.release]
 strip = true
