@@ -1,5 +1,6 @@
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use std::env;
+use std::io::BufReader;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::process;
@@ -83,8 +84,7 @@ async fn main() -> Result<()> {
                 .join("failure_detail.rawproto")
                 .to_string_lossy()
         ))
-        .arg(format!("--workspace_directory={}", &root.to_string_lossy()))
-        .arg("--max_idle_secs=5");
+        .arg(format!("--workspace_directory={}", &root.to_string_lossy()));
 
     let mut child = server_proc.spawn().unwrap();
 
@@ -115,11 +115,11 @@ async fn main() -> Result<()> {
     let req = command_server::command_server::RunRequest {
         client_description: String::from("urchin"),
         cookie: fs::read_to_string(server.join("request_cookie")).unwrap(),
-        arg: vec![
-            "build".as_bytes().to_vec(),
-            ":test".as_bytes().to_vec(),
-            "--isatty=1".as_bytes().to_vec(),
-        ],
+        arg: env::args()
+            .skip(1)
+            .chain(vec!["--isatty".to_string()])
+            .map(|f| f.as_bytes().to_vec())
+            .collect(),
         block_for_lock: false,
         preemptible: false,
         command_extensions: vec![],
@@ -130,9 +130,16 @@ async fn main() -> Result<()> {
     let mut resp = cmd.run(tonic::Request::new(req)).await?.into_inner();
 
     while let Some(recv) = resp.next().await {
-        let recv = recv.unwrap();
-        print!("{}", String::from_utf8(recv.standard_error).unwrap());
-        print!("{}", String::from_utf8(recv.standard_output).unwrap());
+        if let Ok(recv) = recv {
+            print!("{}", String::from_utf8(recv.standard_error).unwrap());
+            print!("{}", String::from_utf8(recv.standard_output).unwrap());
+        } else {
+            println!("Bazel server crashed, printing the log.");
+            let log =
+                fs::File::open(output_base.join("java.log")).expect("failed to open java.log");
+
+            io::copy(&mut BufReader::new(log), &mut io::stderr().lock()).unwrap();
+        }
     }
 
     Ok(())
