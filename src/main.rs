@@ -1,43 +1,139 @@
-use anyhow::Context;
-use fides::host::{
-    configure::configure_globals,
-    extension::{Extension, ExtensionCollection},
-    prepare::PrepareContext,
-};
-use starlark::{
-    environment::{GlobalsBuilder, Module},
-    eval::Evaluator,
-    syntax::{AstModule, Dialect},
-    values::{ValueLike, AllocValue},
-};
-use std::path::Path;
+use anyhow::{Ok, Result};
+use std::env;
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
+use std::process;
+use std::vec;
+use std::{fs, io};
+use tokio_stream::StreamExt;
+use tonic::transport::Channel;
+use urchin::command_server;
+use urchin::output;
+use urchin::root;
+use urchin::version::BazelVersion;
 
-fn run_extension<'v>() -> anyhow::Result<()> {
-    let module = Module::new();
-    let globals = GlobalsBuilder::standard().with(configure_globals).build();
-    let mut eval = Evaluator::new(&module);
-    let ast_module =
-        AstModule::parse_file(&Path::new("examples/javascript.star"), &Dialect::Extended)?;
-    module.set_extra_value(
-        eval.heap()
-            .alloc_complex_no_freeze(ExtensionCollection::default()),
-    );
-    eval.eval_module(ast_module, &globals)?;
-    let collection = module
-        .extra_value()
-        .context("extra value should be set")?
-        .downcast_ref::<ExtensionCollection>()
-        .context("failed to cast")?;
-    let collection = collection.collection.lock().expect("");
-    let (_, first_extension) = collection.first().unwrap();
-    let extension = first_extension.downcast_ref::<Extension>().unwrap();
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cwd = env::current_dir().expect("could not determine working directory");
+    let root = root::get_root(&cwd).unwrap_or(fs::canonicalize("./examples/workspace").unwrap());
 
-    let prepare_ctx = PrepareContext::default();
-    let prepare_val = eval.eval_function(extension.prepare, &[prepare_ctx.alloc_value(eval.heap())], &[]);
-    println!("{:?}", prepare_val);
+    let version = BazelVersion::from_root(&root).expect("could not determine Bazel version");
+
+    let output_user_root = output::get_default_user_output_root();
+    let output_base = output::get_default_output_base(&output_user_root, &root);
+    let install = output_base.join("install");
+    let server = output_base.join("server");
+
+    if !install.exists() {
+        println!("Extracting Bazel installation...");
+        let file = fs::File::open(version.get()).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).unwrap();
+            if let Some(name) = file.enclosed_name() {
+                let dest = install.join(name);
+                let parent = dest.parent().unwrap();
+                if !parent.exists() {
+                    fs::create_dir_all(parent).unwrap()
+                }
+                let mode = file.unix_mode().expect("corrupted archive?");
+                let mut out = fs::File::create(dest).unwrap();
+                out.set_permissions(fs::Permissions::from_mode(mode))
+                    .expect("failed to set mode during extraction");
+                io::copy(&mut file, &mut out).unwrap();
+            }
+        }
+    }
+
+    // Create output_base/server directory and write the server.pid.txt file
+    fs::create_dir_all(&server).unwrap();
+    let pid_path = server.join("server.pid.txt");
+    fs::File::create(&pid_path)
+        .unwrap()
+        .write_all(process::id().to_string().as_bytes())
+        .unwrap();
+
+    let mut server_proc = process::Command::new(install.join("embedded_tools/jdk/bin/java"));
+
+    // Redirect stderr into java_log.
+    let java_log = fs::File::create(output_base.join("java.log")).unwrap();
+    server_proc.stderr(process::Stdio::from(java_log));
+
+    server_proc
+        // Jvm arguments
+        .arg("--add-opens=java.base/java.lang=ALL-UNNAMED")
+        .arg("-Xverify:none")
+        .arg("-Dfile.encoding=ISO-8859-1")
+        .arg("-Duser.country=")
+        .arg("-Duser.language=")
+        .arg("-Duser.variant=")
+        .arg("-jar")
+        .arg(install.join("A-server.jar"))
+        // Bazel arguments
+        .arg(format!(
+            "--output_user_root={}",
+            output_user_root.to_string_lossy()
+        ))
+        .arg(format!("--output_base={}", output_base.to_string_lossy()))
+        .arg(format!("--install_base={}", install.to_string_lossy()))
+        .arg(format!(
+            "--failure_detail_out={}",
+            output_base
+                .join("failure_detail.rawproto")
+                .to_string_lossy()
+        ))
+        .arg(format!("--workspace_directory={}", &root.to_string_lossy()))
+        .arg("--max_idle_secs=5");
+
+    let mut child = server_proc.spawn().unwrap();
+
+    loop {
+        if server.join("request_cookie").try_exists().unwrap_or(false) {
+            break;
+        }
+    }
+
+    ctrlc::set_handler(move || {
+        let _ = fs::remove_file(&pid_path);
+        child.kill().unwrap();
+        println!("Killing server.");
+        process::exit(0);
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    let command_port = fs::read_to_string(server.join("command_port")).unwrap();
+
+    let channel = Channel::from_shared(format!("http://{}", command_port))
+        .unwrap()
+        .connect()
+        .await?;
+
+    let mut cmd =
+        command_server::command_server::command_server_client::CommandServerClient::new(channel);
+
+    let req = command_server::command_server::RunRequest {
+        client_description: String::from("urchin"),
+        cookie: fs::read_to_string(server.join("request_cookie")).unwrap(),
+        arg: vec![
+            "build".as_bytes().to_vec(),
+            ":test".as_bytes().to_vec(),
+            "--isatty=1".as_bytes().to_vec(),
+        ],
+        block_for_lock: false,
+        preemptible: false,
+        command_extensions: vec![],
+        invocation_policy: String::new(),
+        startup_options: vec![],
+    };
+
+    let mut resp = cmd.run(tonic::Request::new(req)).await?.into_inner();
+
+    while let Some(recv) = resp.next().await {
+        let recv = recv.unwrap();
+        print!("{}", String::from_utf8(recv.standard_error).unwrap());
+        print!("{}", String::from_utf8(recv.standard_output).unwrap());
+    }
+
     Ok(())
-}
-
-fn main() {
-    run_extension().expect("failed");
 }
