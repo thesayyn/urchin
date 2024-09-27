@@ -18,6 +18,10 @@ tokio-stream = "0.1.15"
 tonic = "0.11.0"
 whoami = "1.5.1"
 zip = "0.6.6"
+wasmer = "4.3.7"
+wasmer-wasix = "0.27.0"
+wasmer-compiler-llvm = "4.3.7"
+wasmer-cache = "4.3.7"
 
 
 [profile.release]
@@ -25,4 +29,9 @@ strip = true
 
 [build-dependencies]
 tonic-build = "0.11.0"
+
+
+[[bin]]
+name = "ext"
+path = "src/extrun.rs"
 
