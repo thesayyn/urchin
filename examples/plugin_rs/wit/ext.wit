@@ -1,0 +1,6 @@
+package urchin:host;
+
+world v1 {
+    import adios: func(input: string) -> string;
+    export run: func();
+}

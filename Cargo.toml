@@ -16,12 +16,11 @@ prost-types = "0.12.4"
 tokio = {version = "1.37.0", features = ["rt-multi-thread", "macros"] }
 tokio-stream = "0.1.15"
 tonic = "0.11.0"
+wasmtime = "25.0.1"
+wasmtime-wasi = "25.0.1"
 whoami = "1.5.1"
+wit-component = "0.218.0"
 zip = "0.6.6"
-wasmer = "4.3.7"
-wasmer-wasix = "0.27.0"
-wasmer-compiler-llvm = "4.3.7"
-wasmer-cache = "4.3.7"
 
 
 [profile.release]
@@ -33,5 +32,5 @@ tonic-build = "0.11.0"
 
 [[bin]]
 name = "ext"
-path = "src/extrun.rs"
+path = "src/extension/main.rs"
 
