@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.81"
+capnp = "0.20.2"
 ctrlc = "3.4.4"
 dirs = "5.0.1"
+futures = "0.3.31"
 http_req = "0.10.2"
 md5 = "0.7.0"
 prost = "0.12.4"
@@ -19,7 +21,6 @@ tonic = "0.11.0"
 wasmtime = "25.0.1"
 wasmtime-wasi = "25.0.1"
 whoami = "1.5.1"
-wit-component = "0.218.0"
 zip = "0.6.6"
 
 
