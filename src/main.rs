@@ -47,20 +47,24 @@ async fn main() -> Result<()> {
         }
     }
 
+    println!("{}", output_base.to_string_lossy());
     // Create output_base/server directory and write the server.pid.txt file
     fs::create_dir_all(&server).unwrap();
     let pid_path = server.join("server.pid.txt");
-    fs::File::create(&pid_path)
+    if !pid_path.exists() {
+        fs::File::create(&pid_path)
         .unwrap()
         .write_all(process::id().to_string().as_bytes())
         .unwrap();
 
-    let mut server_proc = process::Command::new(install.join("embedded_tools/jdk/bin/java"));
-
+    // let mut server_proc = process::Command::new(install.join("embedded_tools/jdk/bin/java"));
+    // let mut server_proc = process::Command::new("/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home/bin/java");
+    let mut server_proc = process::Command::new("/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home/bin/java");
+    // let mut server_proc = process::Command::new("/Users/thesayyn/Downloads/zulu23.32.11-ca-jdk23.0.2-macosx_aarch64/zulu-23.jdk/Contents/Home/bin/java");
     // Redirect stderr into java_log.
     let java_log = fs::File::create(output_base.join("java.log")).unwrap();
     server_proc.stderr(process::Stdio::from(java_log));
-
+    server_proc.env("DYLD_INSERT_LIBRARIES", "/Users/thesayyn/Downloads/frida-gadget-16.6.6-macos-universal.dylib");
     server_proc
         // Jvm arguments
         .arg("--add-opens=java.base/java.lang=ALL-UNNAMED")
@@ -86,21 +90,27 @@ async fn main() -> Result<()> {
         ))
         .arg(format!("--workspace_directory={}", &root.to_string_lossy()));
 
-    let mut child = server_proc.spawn().unwrap();
+        let mut child = server_proc.spawn()?;
 
-    loop {
-        if server.join("request_cookie").try_exists().unwrap_or(false) {
-            break;
-        }
+        let pid_path = pid_path.clone();
+        // TODO: always set handler and kill by pid
+        ctrlc::set_handler(move || {
+            let _ = fs::remove_file(&pid_path);
+            child.kill().unwrap();
+            println!("Killing server.");
+            process::exit(0);
+        })
+        .expect("Error setting Ctrl-C handler");
+
+        loop {
+            if server.join("request_cookie").try_exists().unwrap_or(false) {
+                break;
+            }
+        }    
     }
-
-    ctrlc::set_handler(move || {
-        let _ = fs::remove_file(&pid_path);
-        child.kill().unwrap();
-        println!("Killing server.");
-        process::exit(0);
-    })
-    .expect("Error setting Ctrl-C handler");
+    
+        
+    println!("Server pid is {}", fs::read_to_string(&pid_path).unwrap());
 
     let command_port = fs::read_to_string(server.join("command_port")).unwrap();
 

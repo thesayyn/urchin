@@ -7,7 +7,7 @@ This is a combination of Bazelisk and Bazel's [own](https://github.com/bazelbuil
 
 # Run it yourself
 
-Here's the command: `cargo run -- build :test --isatty`
+Here's the command: `cargo run --bin bazel -- build :test --isatty`
 
 ```
 thesayyn@Sahins-MacBook-Pro-2 urchin % cargo run -- build :test --isatty 
