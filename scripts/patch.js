@@ -1,5 +1,3 @@
-while (!Java.available) {}
-
 Java.perform(() => {
     let blaze_version = Java.use("com.google.devtools.build.lib.analysis.BlazeVersionInfo");
 

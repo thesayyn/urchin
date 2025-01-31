@@ -59,16 +59,18 @@ async fn main() -> Result<()> {
 
     // let mut server_proc = process::Command::new(install.join("embedded_tools/jdk/bin/java"));
     // let mut server_proc = process::Command::new("/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home/bin/java");
-    let mut server_proc = process::Command::new("/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home/bin/java");
+    let mut server_proc = process::Command::new("/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home/bin/java");
     // let mut server_proc = process::Command::new("/Users/thesayyn/Downloads/zulu23.32.11-ca-jdk23.0.2-macosx_aarch64/zulu-23.jdk/Contents/Home/bin/java");
     // Redirect stderr into java_log.
     let java_log = fs::File::create(output_base.join("java.log")).unwrap();
     server_proc.stderr(process::Stdio::from(java_log));
-    server_proc.env("DYLD_INSERT_LIBRARIES", "/Users/thesayyn/Downloads/frida-gadget-16.6.6-macos-universal.dylib");
+    server_proc.env("DYLD_INSERT_LIBRARIES", "/Users/thesayyn/Documents/urchin/spine/target/debug/libspine.dylib");
+    // server_proc.env("RUST_BACKTRACE", "1");
     server_proc
         // Jvm arguments
         .arg("--add-opens=java.base/java.lang=ALL-UNNAMED")
         .arg("-Xverify:none")
+        // .arg("-Xlog:all=info:stderr:uptime,level,tags")
         .arg("-Dfile.encoding=ISO-8859-1")
         .arg("-Duser.country=")
         .arg("-Duser.language=")

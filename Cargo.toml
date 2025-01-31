@@ -41,3 +41,9 @@ path = "src/main.rs"
 name = "ext"
 path = "src/extension/main.rs"
 
+[workspace]
+
+members = [
+    "spine",
+]
+

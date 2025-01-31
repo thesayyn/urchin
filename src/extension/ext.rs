@@ -27,7 +27,7 @@ impl Ext {
         let ty = FuncType::new(&engine, [ValType::ANYREF], []);
 
         linker.func_new("urchin", "exchange", ty, |_, args, _| {
-            let ar = args[0].anyref().unwrap().as_ref().unwrap()
+            let ar = args[0].anyref().unwrap().as_ref().unwrap();
             
             println!("Somebody said hello!");
             Ok(())
